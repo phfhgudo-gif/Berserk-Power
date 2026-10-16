@@ -1,0 +1,68 @@
+# ตัวเลือก: วางไฟล์นี้ที่ .github/workflows/build-divine-breaker.yml ในรีโป
+# ใช้เมื่อ workflow เดิมของคุณแปลง zip -> jar ไม่ได้ (หรือไม่มี)
+# ทำงานเมื่อ push ไฟล์ divine-breaker-mod.zip (ที่ root ของรีโป) หรือกด Run workflow เอง
+# ขั้นตอน: แตก zip -> build -> ลบ jar เก่าในโฟลเดอร์ jars/ -> ใส่ jar ใหม่ -> commit
+name: Build Divine Breaker JAR
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'divine-breaker-mod.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.1.1
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.1.1'
+
+      - name: Unzip project
+        run: |
+          set -e
+          rm -rf _divine_src
+          mkdir _divine_src
+          unzip -q divine-breaker-mod.zip -d _divine_src
+          GRADLE_FILE=$(find _divine_src -maxdepth 3 -name build.gradle | head -n 1)
+          test -n "$GRADLE_FILE"
+          echo "PROJECT_DIR=$(dirname "$GRADLE_FILE")" >> "$GITHUB_ENV"
+
+      - name: Build JAR
+        run: |
+          cd "$PROJECT_DIR"
+          gradle build --no-daemon
+
+      - name: Delete old JAR and add new JAR
+        run: |
+          mkdir -p jars
+          rm -f jars/divinebreaker-*.jar
+          cp "$PROJECT_DIR"/build/libs/divinebreaker-*.jar jars/
+          ls -l jars
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: divinebreaker-jar
+          path: jars/divinebreaker-*.jar
+
+      - name: Commit new JAR
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add jars
+          git diff --cached --quiet || git commit -m "Build Divine Breaker JAR"
+          git push
